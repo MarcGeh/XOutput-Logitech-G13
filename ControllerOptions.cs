@@ -2,28 +2,29 @@
 using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
+using SlimDX.DirectInput;
 
 namespace XOutput
 {
     public partial class ControllerOptions : Form
     {
         ControllerDevice dev;
-        private Thread detectThread;
         public ControllerOptions(ControllerDevice device)
         {
             InitializeComponent();
             dev = device;
             int ind = 0;
+            //dev.keyboard.Acquire();
+            //KeyboardState kState = dev.keyboard.GetCurrentState();
+            //dev.keyboard.Unacquire();
 
             foreach (MultiLevelComboBox m in this.Controls.OfType<MultiLevelComboBox>()) {
                 //Tag structure: [Type, Number, Index]
                 m.Items[0] = getBindingText(ind); //Change combobox text according to saved binding
-                m.addOption("Disabled",
-                    tag: new byte[] { 255, 0, (byte)ind });
-                m.addOption("Detect",
-                    tag: new byte[] { 254, 0, (byte)ind });
+                m.addOption("Disabled", tag: new byte[] { 255, 0, (byte)ind });
                 ToolStripMenuItem axes = m.addMenu("Axes");
                 ToolStripMenuItem buttons = m.addMenu("Buttons");
+                //ToolStripMenuItem keys = m.addMenu("Keys");
                 ToolStripMenuItem dpads = m.addMenu("D-Pads");
                 ToolStripMenuItem iaxes = m.addMenu("Inverted Axes", axes);
                 ToolStripMenuItem haxes = m.addMenu("Half Axes", axes);
@@ -33,6 +34,12 @@ namespace XOutput
                     m.addOption("Button " + i.ToString(), buttons,
                         new byte[] { 0, (byte)(i - 1), (byte)ind });
                 }
+                
+                /*for (int i = 0; i < kState.AllKeys.Count; i++)
+                {
+                    m.addOption(kState.AllKeys[i].ToString(), keys,
+                       new byte[] { 0, (byte)(i), (byte)ind });
+                }*/
                 for (int i = 1; i <= dev.joystick.Capabilities.PovCount; i++)
                 {
                     m.addOption("D-Pad " + i.ToString() + " Up", dpads,

@@ -16,80 +16,32 @@ namespace XOutput
             public byte[] output = new byte[8];
         }
 
-        private DirectInput directInput;
-        private ControllerDevice[] devices;
+        public DirectInput directInput;
+        private ControllerDevice device;
         public bool running = false;
-        private Thread[] workers = new Thread[4];
+        private Thread worker;
         public const String BUS_CLASS_GUID = "{F679F562-3164-42CE-A4DB-E7DDBE723909}";
-        private ContData[] processingData = new ContData[4];
+        private ContData processingData;
         private Control handle;
-        public bool isExclusive = false;
-
-
-        private object[] ds4locks = new object[4];
+        private Keyboard keyb;
+        private object ds4lock;
+        public int controllerIndex = 0;
+        private int controllerNrPluggedIn = 1;
 
         public ControllerManager(Control _handle)
             : base(BUS_CLASS_GUID)
         {
             directInput = new DirectInput();
-            devices = new ControllerDevice[4];
+            keyb = new Keyboard(directInput);
             handle = _handle;
-            ds4locks[0] = new object();
-            ds4locks[1] = new object();
-            ds4locks[2] = new object();
-            ds4locks[3] = new object();
+            ds4lock = new object();
         }
 
         #region Utility Functions
 
-        public void changeExclusive(bool e)
+        public ControllerDevice getController()
         {
-            isExclusive = e;
-            for (int i = 0; i < 4; i++)
-            {
-                if (devices[i] != null)
-                {
-                    if (isExclusive)
-                    {
-                        devices[i].joystick.Unacquire();
-                        devices[i].joystick.SetCooperativeLevel(handle, CooperativeLevel.Exclusive | CooperativeLevel.Background);
-                        devices[i].joystick.Acquire();
-                    }
-                    else
-                    {
-                        devices[i].joystick.Unacquire();
-                        devices[i].joystick.SetCooperativeLevel(handle, CooperativeLevel.Nonexclusive | CooperativeLevel.Background);
-                        devices[i].joystick.Acquire();
-                    }
-                }
-            }
-        }
-
-        public ControllerDevice getController(int n)
-        {
-            return devices[n];
-
-        }
-
-        public void Swap(int i, int p)
-        {
-            if (true)//devices[i - 1] != null && devices[p - 1] != null)
-            {
-
-                ControllerDevice s = devices[i - 1];
-                devices[i - 1] = devices[p - 1];
-                devices[p - 1] = s;
-                devices[p - 1].changeNumber(p);
-
-                if (devices[i - 1] != null)
-                    devices[i - 1].changeNumber(i);
-
-            }
-        }
-
-        public void setControllerEnable(int i, bool b)
-        {
-            devices[i].enabled = b;
+            return device;
         }
 
         private Int32 Scale(Int32 Value, Boolean Flip)
@@ -127,39 +79,37 @@ namespace XOutput
         {
             Console.WriteLine(Process.GetCurrentProcess().MainWindowHandle);
             Open();
-            detectControllers();
-            running = true;
-            for (int i = 0; i < 4; i++)
+            keyb.Acquire();
+            DetectControllers();
+            if (device != null)
             {
-                if (devices[i] != null && devices[i].enabled)
+                if (!running)
                 {
                     running = true;
-                    processingData[i] = new ContData();
-                    Console.WriteLine("Plug " + i);
-                    Plugin(i + 1);
-                    int t = i;
-                    workers[i] = new Thread(() =>
-                    { ProcessData(t); });
-                    workers[i].Start();
+                    processingData = new ContData();
+                    controllerNrPluggedIn = controllerIndex + 1;
+                    Console.WriteLine("Plug in XBox controller " + controllerNrPluggedIn.ToString());
+                    Plugin(controllerNrPluggedIn);
+                    worker = new Thread(() =>
+                    { ProcessData(); });
+                    worker.Start();
                 }
             }
-
             return running;
         }
 
-        public ControllerDevice[] detectControllers()
+        public ControllerDevice DetectControllers()
         {
-            for (int i = 0; i < 4; i++) //Remove disconnected controllers
+            if (device != null && !directInput.IsDeviceAttached(device.joystick.Information.InstanceGuid))
             {
-                if (devices[i] != null && !directInput.IsDeviceAttached(devices[i].joystick.Information.InstanceGuid))
-                {
-                    Console.WriteLine(devices[i].joystick.Properties.InstanceName + " Removed");
-                    devices[i] = null;
-                    workers[i].Abort();
-                    workers[i] = null;
-                    Unplug(i + 1);
-                }
+                Console.WriteLine(device.joystick.Properties.InstanceName + " Removed");
+                device = null;
+                worker.Abort();
+                worker = null;
+                Unplug(controllerNrPluggedIn);
             }
+            if (device != null)
+                return device;
 
             foreach (var deviceInstance in directInput.GetDevices(DeviceClass.GameController, DeviceEnumerationFlags.AttachedOnly))
             {
@@ -171,52 +121,24 @@ namespace XOutput
                 if (joystick.Capabilities.ButtonCount < 1 && joystick.Capabilities.AxesCount < 1) //Skip if it doesn't have any button and axes
                     continue;
 
-                int spot = -1;
-                for (int i = 0; i < 4; i++)
-                {
-                    if (devices[i] == null)
-                    {
-                        if (spot == -1)
-                        {
-                            spot = i;
-                            Console.WriteLine("Open Spot " + i.ToString());
-                        }
-                    }
-                    else if (devices[i] != null && devices[i].joystick.Information.InstanceGuid == deviceInstance.InstanceGuid) //If the device is already initialized skip it
-                    {
-                        Console.WriteLine("Controller Already Acquired " + i.ToString() + " " + deviceInstance.InstanceName);
-                        spot = -1;
-                        break;
-                    }
-                }
-
-                if (spot == -1)
+                if (joystick.Information.InstanceName != "Logitech G13 Joystick")
                     continue;
 
-                if (isExclusive)
+                Logger.Log("Found Logitech G13 Joystick");
+                if (device != null && device.joystick.Information.InstanceGuid == deviceInstance.InstanceGuid) //If the device is already initialized skip it
                 {
-                    joystick.SetCooperativeLevel(handle, CooperativeLevel.Exclusive | CooperativeLevel.Background);
+                    Console.WriteLine("Controller Already Acquired " + deviceInstance.InstanceName);
+                    break;
                 }
-                else
-                {
-                    joystick.SetCooperativeLevel(handle, CooperativeLevel.Nonexclusive | CooperativeLevel.Background);
-                }
+
+                joystick.SetCooperativeLevel(handle, CooperativeLevel.Exclusive | CooperativeLevel.Background);
                 joystick.Properties.BufferSize = 128;
                 joystick.Acquire();
-
-                devices[spot] = new ControllerDevice(joystick, spot + 1);
-                if (IsActive)
-                {
-                    processingData[spot] = new ContData();
-                    Console.WriteLine("Plug " + spot);
-                    Plugin(spot + 1);
-                    int t = spot;
-                    workers[spot] = new Thread(() =>
-                    { ProcessData(t); });
-                    workers[spot].Start();
-                }
+                device = new ControllerDevice(joystick, keyb);
+                Console.WriteLine("Created new instance and aquired joystick");
+                break;
             }
-            return devices;
+            return device;
         }
 
         public override bool Stop()
@@ -224,17 +146,14 @@ namespace XOutput
             if (running)
             {
                 running = false;
-                for (int i = 0; i < 4; i++)
+                if (device != null)
                 {
-                    if (devices[i] != null && devices[i].enabled)
-                    {
-                        Console.WriteLine(i);
-                        workers[i].Abort();
-                        workers[i] = null;
-                        Unplug(i + 1);
-                    }
+                    worker.Abort();
+                    worker = null;
+                    Console.WriteLine("Unplug XBox controller " + controllerNrPluggedIn.ToString());
+                    Unplug(controllerNrPluggedIn);
+                    keyb.Unacquire();
                 }
-
             }
             return base.Stop();
         }
@@ -285,24 +204,21 @@ namespace XOutput
             return false;
         }
 
-        private void ProcessData(int n)
+        private void ProcessData()
         {
             while (IsActive)
             {
-                lock (ds4locks[n])
+                lock (ds4lock)
                 {
-                    if (devices[n] == null)
+                    if (device != null)
                     {
-                        //Console.WriteLine("die" + n.ToString());
-                        //continue;
-                    }
-                    byte[] data = devices[n].getoutput();
-                    if (data != null && devices[n].enabled)
-                    {
-
-                        data[0] = (byte)n;
-                        Parse(data, processingData[n].parsedData);
-                        Report(processingData[n].parsedData, processingData[n].output);
+                        byte[] data = device.getoutput();
+                        if (data != null)
+                        {
+                            data[0] = (byte)0;
+                            Parse(data, processingData.parsedData);
+                            Report(processingData.parsedData, processingData.output);
+                        }
                     }
                     Thread.Sleep(1);
                 }
@@ -314,12 +230,9 @@ namespace XOutput
             if (IsActive)
             {
                 Int32 Transfered = 0;
-
-
                 bool result = DeviceIoControl(m_FileHandle, 0x2A400C, Input, Input.Length, Output, Output.Length, ref Transfered, IntPtr.Zero) && Transfered > 0;
                 int deviceInd = Input[4] - 1;
                 return result;
-
             }
             return false;
         }

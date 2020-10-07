@@ -14,9 +14,8 @@ namespace XOutput
     public class ControllerDevice
     {
         public Joystick joystick;
-        int deviceNumber;
+        public Keyboard keyboard;
         public string name;
-        public bool enabled = true;
 
         public OutputState cOutput;
         public byte[] mapping = new byte[42];
@@ -27,10 +26,10 @@ namespace XOutput
 
         delegate byte input(byte subType, byte num);
 
-        public ControllerDevice(Joystick joy, int num)
+        public ControllerDevice(Joystick joy, Keyboard keyb)
         {
+            keyboard = keyb;
             joystick = joy;
-            deviceNumber = num;
             name = joystick.Information.InstanceName;
             cOutput = new OutputState();
             for (int i = 0; i < 42; i++)
@@ -76,11 +75,6 @@ namespace XOutput
                 case 31500: b[0] = true; b[1] = false; b[2] = true; b[3] = false; break;
             }
             return b;
-        }
-
-        public void changeNumber(int n)
-        {
-            deviceNumber = n;
         }
 
         #endregion
@@ -131,7 +125,23 @@ namespace XOutput
         private void updateInput()
         {
             joystick.Poll();
+            keyboard.Poll();
             JoystickState jState = joystick.GetCurrentState();
+            KeyboardState kState = keyboard.GetCurrentState();
+            System.Collections.Generic.IList<Key> keys = kState.PressedKeys;
+            bool ctrl = false;
+            bool alt = false;
+            for(int i = 0; i < keys.Count; i++)
+            {
+                if(keys[i] == Key.LeftAlt)
+                {
+                    alt = true;
+                }
+                else if(keys[i] == Key.LeftControl)
+                {
+                    ctrl = true;
+                }
+            }
             buttons = jState.GetButtons();
             dPads = jState.GetPointOfViewControllers();
             analogs = GetAxes(jState);
@@ -170,8 +180,8 @@ namespace XOutput
             cOutput.L2 = output[9];
             cOutput.R2 = output[8];
 
-            cOutput.L1 = output[10] != 0;
-            cOutput.R1 = output[11] != 0;
+            cOutput.L1 = output[10] != 0 || alt;
+            cOutput.R1 = output[11] != 0 || ctrl;
 
             cOutput.L3 = output[12] != 0;
             cOutput.R3 = output[13] != 0;

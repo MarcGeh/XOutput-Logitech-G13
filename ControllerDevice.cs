@@ -180,8 +180,8 @@ namespace XOutput
             cOutput.L2 = output[9];
             cOutput.R2 = output[8];
 
-            cOutput.L1 = output[10] != 0 || alt;
-            cOutput.R1 = output[11] != 0 || ctrl;
+            cOutput.L1 = output[10] != 0 || ctrl;
+            cOutput.R1 = output[11] != 0 || alt;
 
             cOutput.L3 = output[12] != 0;
             cOutput.R3 = output[13] != 0;
